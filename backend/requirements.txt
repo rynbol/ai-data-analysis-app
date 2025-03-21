@@ -1,0 +1,9 @@
+flask==3.0.0
+flask-cors==4.0.0
+flask-sqlalchemy==3.1.1
+psycopg2-binary==2.9.10
+python-dotenv==1.0.0
+SQLAlchemy==2.0.39
+pandas==2.1.4
+openpyxl==3.1.2
+xlrd==2.0.1 

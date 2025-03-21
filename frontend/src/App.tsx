@@ -122,67 +122,16 @@ function App() {
           for (let i = 1; i < maxRows; i++) {
             if (rows[i].trim() === "") continue;
 
-            // Split by comma, but handle quoted values that might contain commas
-            const values: string[] = [];
-            let currentValue = "";
-            let insideQuotes = false;
-            let escapedQuote = false;
+            const values = rows[i].split(",").map((v) => v.trim());
+            const row: Record<string, unknown> = {};
 
-            // Parse the CSV line character by character to handle quoted fields correctly
-            const line = rows[i];
-            for (let j = 0; j < line.length; j++) {
-              const char = line[j];
-
-              if (char === '"') {
-                if (escapedQuote) {
-                  // Handle escaped quotes (double quotes)
-                  currentValue += '"';
-                  escapedQuote = false;
-                } else if (j + 1 < line.length && line[j + 1] === '"') {
-                  // Found a double quote, mark for escaping
-                  escapedQuote = true;
-                } else {
-                  // Regular quote, toggle inside quotes state
-                  insideQuotes = !insideQuotes;
-                }
-              } else if (char === "," && !insideQuotes) {
-                values.push(currentValue.trim());
-                currentValue = "";
-              } else {
-                currentValue += char;
-              }
-            }
-            // Add the last value
-            values.push(currentValue.trim());
-
-            // Ensure we have the right number of values
-            while (values.length < headers.length) {
-              values.push("");
-            }
-
-            const rowData: Record<string, unknown> = {};
-
-            // Ensure we have a value for each header, even if it's empty
-            headers.forEach((header, index) => {
-              const value = values[index] || "";
-              // Try to parse numbers and dates
-              if (value === "") {
-                rowData[header] = "";
-              } else if (!isNaN(Number(value)) && value !== "") {
-                rowData[header] = Number(value);
-              } else if (Date.parse(value)) {
-                rowData[header] = new Date(value).toISOString().split("T")[0];
-              } else {
-                // For text values, preserve the exact string
-                rowData[header] = value;
-              }
+            headers.forEach((header, idx) => {
+              row[header] = values[idx] || "";
             });
 
-            // Add all rows, ensuring they have data for all columns
-            parsedData.push(rowData);
+            parsedData.push(row);
           }
 
-          console.log(`Parsed ${parsedData.length} rows from CSV`);
           setDataPreview(parsedData);
         } else if (
           file.name.toLowerCase().endsWith(".xlsx") ||
@@ -210,7 +159,15 @@ function App() {
             // Append the file with original name to preserve the file extension
             formData.append("file", fileBlob, file.name);
 
-            console.log("Sending Excel file to backend:", file.name);
+            // Include the fileId to associate the data with the correct file
+            formData.append("fileId", file.id);
+
+            console.log(
+              "Sending Excel file to backend:",
+              file.name,
+              "with ID:",
+              file.id
+            );
 
             const response = await fetch(
               `${
@@ -313,67 +270,16 @@ function App() {
           for (let i = 1; i < maxRows; i++) {
             if (rows[i].trim() === "") continue;
 
-            // Split by comma, but handle quoted values that might contain commas
-            const values: string[] = [];
-            let currentValue = "";
-            let insideQuotes = false;
-            let escapedQuote = false;
+            const values = rows[i].split(",").map((v) => v.trim());
+            const row: Record<string, unknown> = {};
 
-            // Parse the CSV line character by character to handle quoted fields correctly
-            const line = rows[i];
-            for (let j = 0; j < line.length; j++) {
-              const char = line[j];
-
-              if (char === '"') {
-                if (escapedQuote) {
-                  // Handle escaped quotes (double quotes)
-                  currentValue += '"';
-                  escapedQuote = false;
-                } else if (j + 1 < line.length && line[j + 1] === '"') {
-                  // Found a double quote, mark for escaping
-                  escapedQuote = true;
-                } else {
-                  // Regular quote, toggle inside quotes state
-                  insideQuotes = !insideQuotes;
-                }
-              } else if (char === "," && !insideQuotes) {
-                values.push(currentValue.trim());
-                currentValue = "";
-              } else {
-                currentValue += char;
-              }
-            }
-            // Add the last value
-            values.push(currentValue.trim());
-
-            // Ensure we have the right number of values
-            while (values.length < headers.length) {
-              values.push("");
-            }
-
-            const rowData: Record<string, unknown> = {};
-
-            // Ensure we have a value for each header, even if it's empty
-            headers.forEach((header, index) => {
-              const value = values[index] || "";
-              // Try to parse numbers and dates
-              if (value === "") {
-                rowData[header] = "";
-              } else if (!isNaN(Number(value)) && value !== "") {
-                rowData[header] = Number(value);
-              } else if (Date.parse(value)) {
-                rowData[header] = new Date(value).toISOString().split("T")[0];
-              } else {
-                // For text values, preserve the exact string
-                rowData[header] = value;
-              }
+            headers.forEach((header, idx) => {
+              row[header] = values[idx] || "";
             });
 
-            // Add all rows, ensuring they have data for all columns
-            parsedData.push(rowData);
+            parsedData.push(row);
           }
 
-          console.log(`Parsed ${parsedData.length} rows from CSV`);
           setDataPreview(parsedData);
         } else if (
           file.name.toLowerCase().endsWith(".xlsx") ||
@@ -401,7 +307,15 @@ function App() {
             // Append the file with original name to preserve the file extension
             formData.append("file", fileBlob, file.name);
 
-            console.log("Sending Excel file to backend:", file.name);
+            // Include the fileId to associate the data with the correct file
+            formData.append("fileId", file.id);
+
+            console.log(
+              "Sending Excel file to backend:",
+              file.name,
+              "with ID:",
+              file.id
+            );
 
             const response = await fetch(
               `${

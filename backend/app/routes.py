@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Initialize global variables for data storage
 app.last_upload_data = {}
-app.session_datasets = {}
+app.session_datasets = {}  # Use this to store multiple datasets by file_id
 
 # OpenAI API configuration
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
@@ -133,21 +133,27 @@ def upload_file():
             row_data = {col: clean_nan(row[col]) for col in df.columns}
             parsed_data.append(row_data)
         
+        # Generate a unique file ID if not provided
+        file_id = request.form.get('fileId', f"file_{datetime.now().strftime('%Y%m%d%H%M%S')}_{abs(hash(file.filename)) % 10000}")
+        
         # Store the upload data for later analysis
         result = {
             'message': 'File uploaded successfully',
             'filename': file.filename,
+            'fileId': file_id,
             'columnHeaders': column_headers,
             'parsedData': parsed_data,
             'uploaded_at': datetime.now().isoformat()
         }
         
-        # Store this data globally for the session
-        if not hasattr(app, 'last_upload_data'):
-            app.last_upload_data = {}
+        # Store this data globally for the session using the file_id as key
+        if not hasattr(app, 'session_datasets'):
+            app.session_datasets = {}
         
-        app.last_upload_data = result
-        logger.info(f"Stored upload data for file: {file.filename}")
+        app.session_datasets[file_id] = result
+        app.last_upload_data = result  # Keep this for backward compatibility
+        
+        logger.info(f"Stored upload data for file: {file.filename} with ID: {file_id}")
                 
         # Return the parsed data
         return jsonify(result)
@@ -285,18 +291,24 @@ def analyze_data():
     logger.info(f"Received prompt: {prompt}")
     logger.info(f"File ID: {file_id}")
     
-    # Get the dataset description based on the uploaded file
-    if hasattr(app, 'last_upload_data') and app.last_upload_data:
-        logger.info("Using last uploaded data for analysis")
-        
+    # Get the dataset description based on the file ID
+    if file_id and hasattr(app, 'session_datasets') and file_id in app.session_datasets:
+        logger.info(f"Using data for file_id: {file_id}")
+        dataset_info = app.session_datasets[file_id]
+    elif hasattr(app, 'last_upload_data') and app.last_upload_data:
+        logger.info("Using last uploaded data for analysis (fallback)")
         dataset_info = app.last_upload_data
-        
+    else:
+        logger.warning("No uploaded data found")
+        dataset_info = None
+    
+    # Create a data description for the AI
+    if dataset_info:
         # Get column headers and a sample of the data
         column_headers = dataset_info.get('columnHeaders', [])
         parsed_data = dataset_info.get('parsedData', [])
         filename = dataset_info.get('filename', 'unknown file')
         
-        # Create a data description for the AI
         data_description = f"File: {filename}\n"
         data_description += f"Columns: {', '.join(column_headers)}\n"
         data_description += f"Number of rows: {len(parsed_data)}\n\n"
@@ -309,7 +321,7 @@ def analyze_data():
                 row_str = ", ".join([f"{k}: {v}" for k, v in parsed_data[i].items()])
                 data_description += f"Row {i+1}: {row_str}\n"
     else:
-        logger.warning("No uploaded data found")
+        logger.warning("No dataset information available")
         data_description = None
     
     try:

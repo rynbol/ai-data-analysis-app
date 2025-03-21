@@ -169,16 +169,26 @@ def generate_openai_response(prompt: str, data_description: str = None, dataset_
     try:
         logger.info(f"Sending prompt to OpenAI: {prompt}")
         
+        # Verify API key is valid
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key or len(api_key) < 20:
+            logger.error("Invalid OpenAI API key")
+            raise Exception("Invalid API key configuration")
+            
         # Create a more comprehensive system message with specific instructions
         if data_description:
             system_message = (
                 f"You are a data analysis assistant that helps users understand their datasets. "
-                f"You have access to the following dataset: {data_description}\n\n"
+                f"You have been provided with comprehensive dataset information and sample data. "
+                f"The sample data provided is just a subset of the actual dataset, do not directly mention sample data in your response. Only make use of it to generate accurate and relevant responses. "
+                f"The data includes column types, basic statistics for numerical columns, and a sample of rows in tabular format. "
                 f"When responding to queries:\n"
-                f"1. Analyze the data carefully before drawing conclusions\n"
-                f"2. Provide numerical evidence to support your claims when possible\n"
+                f"1. Use the provided statistical summaries and data sample to draw informed conclusions\n"
+                f"2. Provide numerical evidence and reference specific data points when possible\n"
                 f"3. If you're uncertain about something, acknowledge your limitations\n"
-                f"4. Be concise but thorough in your explanations"
+                f"4. Be concise but thorough in your explanations\n"
+                f"5. Always try to answer the user's question as completely as possible with the data provided\n"
+                f"6. When performing calculations, clearly show your work"
             )
         else:
             system_message = (
@@ -187,17 +197,24 @@ def generate_openai_response(prompt: str, data_description: str = None, dataset_
             )
         
         # Create a more structured user message with the dataset context
-        user_message = prompt
         if dataset_content:
             user_message = (
-                f"Here is information about the dataset:\n\n"
+                f"# DATASET INFORMATION\n"
                 f"{data_description}\n\n"
-                f"And here is a sample of the data (first 20 rows):\n\n"
+                f"# SAMPLE DATA\n"
                 f"{dataset_content}\n\n"
-                f"Based on this dataset, please answer the following question:\n{prompt}\n\n"
-                f"If the question cannot be answered using only this sample data, please mention that "
-                f"and explain what additional data might be needed."
+                f"# USER QUESTION\n"
+                f"{prompt}\n\n"
+                f"# ANALYSIS INSTRUCTIONS\n"
+                f"1. Analyze the provided dataset information and sample data carefully\n"
+                f"2. Pay special attention to the numerical summaries provided for each column\n"
+                f"3. When referring to data, cite specific rows or values from the sample\n"
+                f"4. If the question cannot be answered completely using this sample data, provide partial insights\n"
+                f"   and explain what additional data would be needed\n"
+                f"5. For numerical questions, use the statistics provided in the dataset information\n"
             )
+        else:
+            user_message = prompt
         
         # Create the API request payload with slightly higher token limit for more detailed responses
         payload = {
@@ -207,20 +224,26 @@ def generate_openai_response(prompt: str, data_description: str = None, dataset_
                 {"role": "user", "content": user_message}
             ],
             "temperature": 0.5,  # Lower temperature for more focused responses
-            "max_tokens": 800    # Increased token limit for more detailed analysis
+            "max_tokens": 1000   # Increased token limit for more detailed analysis
         }
         
         # Set up headers with API key
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {OPENAI_API_KEY}"
+            "Authorization": f"Bearer {api_key}"
         }
+        
+        # Log how much data we're sending
+        user_message_length = len(user_message)
+        system_message_length = len(system_message)
+        logger.info(f"Sending data to OpenAI - System message: {system_message_length} chars, User message: {user_message_length} chars")
         
         # Make the API request
         response = requests.post(
             OPENAI_API_URL,
             headers=headers,
-            json=payload
+            json=payload,
+            timeout=10  # Add a timeout to prevent hanging
         )
         
         # Parse the response
@@ -237,8 +260,22 @@ def generate_openai_response(prompt: str, data_description: str = None, dataset_
                 return "I encountered an issue while analyzing your data. Please try again with a more specific question."
         else:
             logger.error(f"OpenAI API error: {response.status_code}, {response.text}")
-            return f"Error: Unable to generate a response. API returned status code {response.status_code}."
+            error_data = response.json() if response.text else {"error": "Unknown error"}
+            error_message = error_data.get("error", {}).get("message", f"API returned status code {response.status_code}")
+            
+            if "exceeded your current quota" in str(error_message).lower():
+                return "The API key has exceeded its quota. Please try again later or contact support for assistance."
+            elif "invalid api key" in str(error_message).lower():
+                return "There is an issue with the API key configuration. Please contact support for assistance."
+            else:
+                return f"Error: Unable to generate a response. API error: {error_message}"
     
+    except requests.exceptions.Timeout:
+        logger.exception("Timeout error calling OpenAI API")
+        return "The request to the AI service timed out. Please try again later."
+    except requests.exceptions.RequestException as e:
+        logger.exception(f"Network error calling OpenAI API: {str(e)}")
+        return f"Network error: {str(e)}"
     except Exception as e:
         logger.exception(f"Error calling OpenAI API: {str(e)}")
         return f"Error: {str(e)}"
@@ -295,12 +332,19 @@ def analyze_data():
     if file_id and hasattr(app, 'session_datasets') and file_id in app.session_datasets:
         logger.info(f"Using data for file_id: {file_id}")
         dataset_info = app.session_datasets[file_id]
-    elif hasattr(app, 'last_upload_data') and app.last_upload_data:
-        logger.info("Using last uploaded data for analysis (fallback)")
+    elif not file_id and hasattr(app, 'last_upload_data') and app.last_upload_data:
+        # Only fall back to last_upload_data if no specific file_id was provided
+        logger.info("No file_id provided. Using last uploaded data for analysis (fallback)")
         dataset_info = app.last_upload_data
     else:
-        logger.warning("No uploaded data found")
-        dataset_info = None
+        if file_id:
+            logger.warning(f"File ID {file_id} not found in session datasets")
+            return jsonify({
+                'error': f'Dataset with ID {file_id} not found'
+            }), 404
+        else:
+            logger.warning("No uploaded data found")
+            dataset_info = None
     
     # Create a data description for the AI
     if dataset_info:
@@ -309,28 +353,133 @@ def analyze_data():
         parsed_data = dataset_info.get('parsedData', [])
         filename = dataset_info.get('filename', 'unknown file')
         
+        # Log the dataset being used for analysis
+        logger.info(f"Analyzing data from file: {filename}, File ID: {file_id}, Rows: {len(parsed_data)}, Columns: {len(column_headers)}")
+        
+        # Create a more comprehensive data description
         data_description = f"File: {filename}\n"
         data_description += f"Columns: {', '.join(column_headers)}\n"
         data_description += f"Number of rows: {len(parsed_data)}\n\n"
         
-        # Add a sample of the data (first 5 rows)
-        sample_rows = min(5, len(parsed_data))
+        # Create dataset content with more rows (up to 20) for better context
+        dataset_content = ""
+        sample_rows = min(20, len(parsed_data))
+        
+        # Create a summary of data types and basic statistics for numerical columns
+        data_types = {}
+        numerical_summaries = {}
+        
+        # Detect data types and calculate basic statistics for numerical columns
         if sample_rows > 0:
-            data_description += "Sample data:\n"
+            for col in column_headers:
+                # Collect non-null values for this column
+                col_values = []
+                for i in range(min(100, len(parsed_data))):  # Check up to 100 rows for type detection
+                    if i < len(parsed_data) and col in parsed_data[i] and parsed_data[i][col] is not None:
+                        col_values.append(parsed_data[i][col])
+                
+                if not col_values:
+                    data_types[col] = "unknown"
+                    continue
+                    
+                # Detect type based on first non-null value
+                first_val = col_values[0]
+                if isinstance(first_val, int):
+                    data_types[col] = "integer"
+                    # Calculate basic statistics for integers
+                    valid_nums = [v for v in col_values if isinstance(v, (int, float)) and not pd.isna(v)]
+                    if valid_nums:
+                        try:
+                            numerical_summaries[col] = {
+                                "min": min(valid_nums),
+                                "max": max(valid_nums),
+                                "avg": sum(valid_nums) / len(valid_nums),
+                                "count": len(valid_nums)
+                            }
+                        except Exception as e:
+                            logger.warning(f"Error calculating statistics for column {col}: {str(e)}")
+                elif isinstance(first_val, float):
+                    data_types[col] = "float"
+                    # Calculate basic statistics for floats
+                    valid_nums = [v for v in col_values if isinstance(v, (int, float)) and not pd.isna(v)]
+                    if valid_nums:
+                        try:
+                            numerical_summaries[col] = {
+                                "min": min(valid_nums),
+                                "max": max(valid_nums),
+                                "avg": sum(valid_nums) / len(valid_nums),
+                                "count": len(valid_nums)
+                            }
+                        except Exception as e:
+                            logger.warning(f"Error calculating statistics for column {col}: {str(e)}")
+                else:
+                    data_types[col] = "string/categorical"
+        
+        # Add data type information to the data description
+        data_description += "Column Data Types:\n"
+        for col, dtype in data_types.items():
+            data_description += f"- {col}: {dtype}"
+            if col in numerical_summaries:
+                stats = numerical_summaries[col]
+                data_description += f" (min: {stats['min']}, max: {stats['max']}, avg: {stats['avg']:.2f}, count: {stats['count']})"
+            data_description += "\n"
+        
+        # Format dataset content in a structured, tabular format
+        if sample_rows > 0:
+            # Create a header with column names
+            dataset_content += "DATA SAMPLE (TABULAR FORMAT):\n"
+            
+            # Format a header row
+            header_row = " | ".join(column_headers)
+            dataset_content += header_row + "\n"
+            dataset_content += "-" * len(header_row) + "\n"
+            
+            # Format data rows with proper value representation
             for i in range(sample_rows):
-                row_str = ", ".join([f"{k}: {v}" for k, v in parsed_data[i].items()])
-                data_description += f"Row {i+1}: {row_str}\n"
+                if i >= len(parsed_data):
+                    break
+                    
+                row_values = []
+                for col in column_headers:
+                    if col in parsed_data[i]:
+                        value = parsed_data[i][col]
+                        # Format different value types appropriately
+                        if value is None:
+                            value_str = ""
+                        elif isinstance(value, (int, float)):
+                            # Format numbers consistently
+                            if isinstance(value, int):
+                                value_str = str(value)
+                            else:
+                                value_str = f"{value:.4f}".rstrip('0').rstrip('.') if '.' in f"{value:.4f}" else str(value)
+                        else:
+                            # For strings, ensure proper representation
+                            value_str = str(value)
+                            # Truncate very long strings
+                            if len(value_str) > 50:
+                                value_str = value_str[:47] + "..."
+                        row_values.append(value_str)
+                    else:
+                        row_values.append("")
+                dataset_content += " | ".join(row_values) + "\n"
     else:
         logger.warning("No dataset information available")
         data_description = None
+        dataset_content = None
     
     try:
-        # Generate response from OpenAI
-        if OPENAI_API_KEY:
+        # Check if OpenAI API key exists and is not empty or malformed
+        api_key = os.getenv('OPENAI_API_KEY')
+        if api_key and len(api_key) > 20 and not '\n' in api_key:
             logger.info("Generating OpenAI response")
-            result = generate_openai_response(prompt, data_description)
+            try:
+                result = generate_openai_response(prompt, data_description, dataset_content)
+            except Exception as e:
+                logger.exception(f"Error calling OpenAI API: {str(e)}")
+                logger.info("Falling back to mock response due to API error")
+                result = generate_mock_response(prompt)
         else:
-            logger.info("Using mock response (no API key)")
+            logger.warning("Invalid or missing OpenAI API key, using mock response")
             result = generate_mock_response(prompt)
         
         # Generate a unique ID for this result
@@ -343,7 +492,7 @@ def analyze_data():
             'answer': result,
             'timestamp': datetime.now(),
             'fileId': file_id,
-            'fileName': filename if file_id and hasattr(app, 'last_upload_data') else "No file"
+            'fileName': filename if file_id and dataset_info else "No file"
         }
         
         # Store in history

@@ -105,34 +105,76 @@ function App() {
           file.name.toLowerCase().endsWith(".csv") &&
           typeof file.content === "string"
         ) {
-          console.log("Parsing CSV content...");
+          console.log(
+            "CSV file detected, sending to backend for processing..."
+          );
 
-          // Parse the CSV content
-          const rows = file.content.split("\n");
-          const headers = rows[0].split(",").map((h) => h.trim());
+          try {
+            const formData = new FormData();
 
-          // Store original headers to preserve column order
-          setColumnHeaders(headers);
-
-          const parsedData: Record<string, unknown>[] = [];
-
-          // Process up to 500 rows for preview
-          const maxRows = Math.min(rows.length, 500);
-
-          for (let i = 1; i < maxRows; i++) {
-            if (rows[i].trim() === "") continue;
-
-            const values = rows[i].split(",").map((v) => v.trim());
-            const row: Record<string, unknown> = {};
-
-            headers.forEach((header, idx) => {
-              row[header] = values[idx] || "";
+            // Convert string content to a Blob
+            const blob = new Blob([file.content as string], {
+              type: "text/csv",
             });
 
-            parsedData.push(row);
-          }
+            // Append the file with original name
+            formData.append("file", blob, file.name);
 
-          setDataPreview(parsedData);
+            // Include the fileId to associate the data with the correct file
+            formData.append("fileId", file.id);
+
+            console.log(
+              "Sending CSV file to backend:",
+              file.name,
+              "with ID:",
+              file.id
+            );
+
+            const response = await fetch(
+              `${
+                import.meta.env.VITE_API_URL || "http://127.0.0.1:5002/api"
+              }/upload`,
+              {
+                method: "POST",
+                body: formData,
+              }
+            );
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(
+                `Server error: ${response.status} - ${
+                  errorData.error || response.statusText
+                }`
+              );
+            }
+
+            const data = await response.json();
+            console.log("Server processed CSV file:", data);
+
+            if (data.parsedData) {
+              setDataPreview(data.parsedData);
+
+              // For CSV files, use the column headers provided by the backend
+              if (data.columnHeaders) {
+                setColumnHeaders(data.columnHeaders);
+              } else if (data.parsedData.length > 0) {
+                setColumnHeaders(Object.keys(data.parsedData[0]));
+              } else {
+                setColumnHeaders([]);
+              }
+            } else {
+              throw new Error("No parsed data received from server");
+            }
+          } catch (error) {
+            console.error("Error processing CSV file:", error);
+            alert(
+              `Error processing CSV file: ${
+                error instanceof Error ? error.message : "Unknown error"
+              }`
+            );
+            setDataPreview([]);
+          }
         } else if (
           file.name.toLowerCase().endsWith(".xlsx") ||
           file.name.toLowerCase().endsWith(".xls")
@@ -171,7 +213,7 @@ function App() {
 
             const response = await fetch(
               `${
-                import.meta.env.VITE_API_URL || "http://127.0.0.1:5000/api"
+                import.meta.env.VITE_API_URL || "http://127.0.0.1:5002/api"
               }/upload`,
               {
                 method: "POST",
@@ -253,34 +295,76 @@ function App() {
           file.name.toLowerCase().endsWith(".csv") &&
           typeof file.content === "string"
         ) {
-          console.log("Parsing CSV content...");
+          console.log(
+            "CSV file detected, sending to backend for processing..."
+          );
 
-          // Parse the CSV content
-          const rows = file.content.split("\n");
-          const headers = rows[0].split(",").map((h) => h.trim());
+          try {
+            const formData = new FormData();
 
-          // Store original headers to preserve column order
-          setColumnHeaders(headers);
-
-          const parsedData: Record<string, unknown>[] = [];
-
-          // Process up to 500 rows for preview
-          const maxRows = Math.min(rows.length, 500);
-
-          for (let i = 1; i < maxRows; i++) {
-            if (rows[i].trim() === "") continue;
-
-            const values = rows[i].split(",").map((v) => v.trim());
-            const row: Record<string, unknown> = {};
-
-            headers.forEach((header, idx) => {
-              row[header] = values[idx] || "";
+            // Convert string content to a Blob
+            const blob = new Blob([file.content as string], {
+              type: "text/csv",
             });
 
-            parsedData.push(row);
-          }
+            // Append the file with original name
+            formData.append("file", blob, file.name);
 
-          setDataPreview(parsedData);
+            // Include the fileId to associate the data with the correct file
+            formData.append("fileId", file.id);
+
+            console.log(
+              "Sending CSV file to backend:",
+              file.name,
+              "with ID:",
+              file.id
+            );
+
+            const response = await fetch(
+              `${
+                import.meta.env.VITE_API_URL || "http://127.0.0.1:5002/api"
+              }/upload`,
+              {
+                method: "POST",
+                body: formData,
+              }
+            );
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(
+                `Server error: ${response.status} - ${
+                  errorData.error || response.statusText
+                }`
+              );
+            }
+
+            const data = await response.json();
+            console.log("Server processed CSV file:", data);
+
+            if (data.parsedData) {
+              setDataPreview(data.parsedData);
+
+              // For CSV files, use the column headers provided by the backend
+              if (data.columnHeaders) {
+                setColumnHeaders(data.columnHeaders);
+              } else if (data.parsedData.length > 0) {
+                setColumnHeaders(Object.keys(data.parsedData[0]));
+              } else {
+                setColumnHeaders([]);
+              }
+            } else {
+              throw new Error("No parsed data received from server");
+            }
+          } catch (error) {
+            console.error("Error processing CSV file:", error);
+            alert(
+              `Error processing CSV file: ${
+                error instanceof Error ? error.message : "Unknown error"
+              }`
+            );
+            setDataPreview([]);
+          }
         } else if (
           file.name.toLowerCase().endsWith(".xlsx") ||
           file.name.toLowerCase().endsWith(".xls")
@@ -319,7 +403,7 @@ function App() {
 
             const response = await fetch(
               `${
-                import.meta.env.VITE_API_URL || "http://127.0.0.1:5000/api"
+                import.meta.env.VITE_API_URL || "http://127.0.0.1:5002/api"
               }/upload`,
               {
                 method: "POST",

@@ -36,7 +36,7 @@ function App() {
   const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null);
 
   // State for preview rows count
-  const [previewRows, setPreviewRows] = useState<number>(10);
+  const [previewRows, setPreviewRows] = useState<number>(5);
 
   // State for data preview
   const [dataPreview, setDataPreview] = useState<Record<string, unknown>[]>([]);
